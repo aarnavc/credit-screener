@@ -44,26 +44,43 @@ st.set_page_config(
 )
 
 
-# Pull in EB Garamond from Google Fonts and force it everywhere. The "*"
-# selector + !important is brute-force, but necessary because Streamlit
-# applies its own font-family at multiple levels of the DOM. The .watermark
-# class is the subtle bottom-of-tab attribution.
+# EB Garamond from Google Fonts. Surgical CSS — text-bearing elements
+# only, with an explicit carve-out for Material Symbols / Material Icons
+# so the expander chevrons (and any other icon-font glyphs) keep rendering
+# as icons instead of falling back to their literal ligature text
+# ("arrow_drop_down", "expand_more", etc.).
 st.markdown(
     """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&display=swap');
-    html, body, [class^="st-"], [class*=" st-"],
-    .stMarkdown, .stApp, .stSidebar, button, input, textarea, select {
-        font-family: 'EB Garamond', Garamond, 'Adobe Garamond Pro', 'Times New Roman', serif !important;
+
+    .stApp,
+    .stApp p, .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6,
+    .stApp label, .stApp .stMarkdown, .stApp .stCaption, .stApp .stTitle,
+    .stApp button, .stApp input, .stApp textarea, .stApp select {
+        font-family: 'EB Garamond', Garamond, 'Adobe Garamond Pro',
+                     'Times New Roman', serif !important;
     }
+
+    /* Preserve the icon font for Streamlit / Material chrome — without
+       this, ligatures render as plain text (e.g. "arrow_drop_down"). */
+    .stApp [class*="material-symbols"],
+    .stApp [class*="material-icons"],
+    .stApp i[class*="material"],
+    .stApp span[data-testid$="Icon"],
+    .stApp [data-testid="stExpanderToggleIcon"] {
+        font-family: 'Material Symbols Rounded', 'Material Symbols Outlined',
+                     'Material Icons' !important;
+    }
+
     .watermark {
         text-align: center;
-        color: rgba(120, 120, 120, 0.55);
+        color: rgba(200, 200, 200, 0.4);
         font-size: 0.8rem;
         font-style: italic;
         margin-top: 2rem;
         padding-top: 1rem;
-        border-top: 1px solid rgba(120, 120, 120, 0.15);
+        border-top: 1px solid rgba(200, 200, 200, 0.12);
     }
     </style>
     """,
