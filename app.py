@@ -296,6 +296,18 @@ def render_issuer(
                 "Below: each SEC 8-K filing event that contributed, the weight it "
                 "carries, and what the underlying filing text said about it."
             )
+
+            # Fold the suppression-reason ("Why kept / suppressed") into the
+            # filing-text review cell — it was mostly empty as its own column.
+            def _review_cell(c) -> str:
+                parts = [
+                    s for s in (
+                        humanize_adjustment_note(c.adjustment_note),
+                        humanize_suppression_note(c.note),
+                    ) if s
+                ]
+                return " · ".join(parts)
+
             st.dataframe(
                 [
                     {
@@ -306,9 +318,7 @@ def render_issuer(
                         "Severity weight":
                             "0 (suppressed)" if c.suppressed else f"+{c.weight:g}",
                         "Filing-text review":
-                            humanize_adjustment_note(c.adjustment_note),
-                        "Why kept / suppressed":
-                            humanize_suppression_note(c.note),
+                            _review_cell(c),
                         "Phrases found in filing text":
                             ", ".join(humanize_phrase(p) for p in c.matched_phrases)
                             if c.matched_phrases else "",
@@ -317,6 +327,22 @@ def render_issuer(
                 ],
                 hide_index=True,
                 use_container_width=True,
+                # Explicit widths so long text reads instead of getting clipped.
+                # Streamlit always allows horizontal scroll inside a dataframe;
+                # forcing these widths makes every row sized identically so
+                # the first one isn't an outlier.
+                column_config={
+                    "Filing event":
+                        st.column_config.TextColumn(width="medium"),
+                    "Filed on":
+                        st.column_config.TextColumn(width="small"),
+                    "Severity weight":
+                        st.column_config.TextColumn(width="small"),
+                    "Filing-text review":
+                        st.column_config.TextColumn(width="large"),
+                    "Phrases found in filing text":
+                        st.column_config.TextColumn(width="large"),
+                },
             )
 
 
@@ -522,7 +548,8 @@ with tab_iss:
     ))
 
     sql = (
-        "SELECT filing_date, cik, company, filing_url FROM filings "
+        "SELECT filing_date, cik, company, accession, primary_document "
+        "FROM filings "
         "WHERE form_type='8-K' AND (',' || items || ',') LIKE '%,2.03,%'"
     )
     params: list = []
@@ -541,8 +568,15 @@ with tab_iss:
         st.write(f"{len(iss_rows)} filing(s)")
         st.dataframe(
             [
-                {"Filed on": fd, "CIK": cik, "Company": co, "Open filing": url}
-                for fd, cik, co, url in iss_rows
+                {
+                    "Filed on": fd,
+                    "CIK": cik,
+                    "Company": co,
+                    # Match the distress board: link to the rendered 8-K
+                    # HTML body when known, else the directory listing.
+                    "Open filing": _filing_render_url(cik, acc, pd),
+                }
+                for fd, cik, co, acc, pd in iss_rows
             ],
             hide_index=True,
             use_container_width=True,
