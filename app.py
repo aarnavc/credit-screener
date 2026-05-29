@@ -44,6 +44,33 @@ st.set_page_config(
 )
 
 
+# Pull in EB Garamond from Google Fonts and force it everywhere. The "*"
+# selector + !important is brute-force, but necessary because Streamlit
+# applies its own font-family at multiple levels of the DOM. The .watermark
+# class is the subtle bottom-of-tab attribution.
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&display=swap');
+    html, body, [class^="st-"], [class*=" st-"],
+    .stMarkdown, .stApp, .stSidebar, button, input, textarea, select {
+        font-family: 'EB Garamond', Garamond, 'Adobe Garamond Pro', 'Times New Roman', serif !important;
+    }
+    .watermark {
+        text-align: center;
+        color: rgba(120, 120, 120, 0.55);
+        font-size: 0.8rem;
+        font-style: italic;
+        margin-top: 2rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(120, 120, 120, 0.15);
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 SEVERITY_BADGE: dict[str, str] = {
     "High":     ":red-background[**HIGH**]",
     "Elevated": ":orange-background[**ELEVATED**]",
@@ -511,6 +538,11 @@ with tab_lb:
             f"covering `{date_range[0]} → {date_range[1]}`."
         )
 
+    st.markdown(
+        "<div class='watermark'>Aarnav Chitari</div>",
+        unsafe_allow_html=True,
+    )
+
 
 # ---------- Issuance feed tab -----------------------------------------------
 
@@ -568,26 +600,9 @@ with tab_iss:
             },
         )
 
+    st.markdown(
+        "<div class='watermark'>Aarnav Chitari</div>",
+        unsafe_allow_html=True,
+    )
 
-# ---------- Watermark ------------------------------------------------------
-# Fixed bottom-right attribution. position: fixed keeps it visible even
-# when the page is scrolled. pointer-events: none so it doesn't intercept
-# clicks. z-index so it stays above Streamlit's own UI chrome.
-st.markdown(
-    """
-    <style>
-    .credit-watermark {
-        position: fixed;
-        bottom: 10px;
-        right: 18px;
-        font-size: 0.75rem;
-        color: rgba(140, 140, 140, 0.7);
-        font-style: italic;
-        z-index: 9999;
-        pointer-events: none;
-    }
-    </style>
-    <div class="credit-watermark">Aarnav Chitari</div>
-    """,
-    unsafe_allow_html=True,
-)
+

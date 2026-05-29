@@ -1,0 +1,11 @@
+[theme]
+# Black / white / dark-green palette. Dark-green primary handles buttons,
+# links, slider tracks, the active-tab indicator, focus rings, etc. Severity
+# badges keep their semantic colors (red/orange/gray) because they convey
+# meaning, not style.
+base = "light"
+primaryColor = "#1B4332"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F1EB"
+textColor = "#1A1A1A"
+font = "serif"
