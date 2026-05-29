@@ -29,3 +29,6 @@ logs/
 
 # R history (leftover from another project)
 .Rhistory
+
+# macOS Terminal.app saved-output files
+Terminal Saved Output.txt

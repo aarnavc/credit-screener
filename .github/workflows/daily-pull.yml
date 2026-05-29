@@ -44,6 +44,14 @@ jobs:
           echo "Pulling $YDAY..."
           python main.py "$YDAY"
 
+      - name: Precompute Layer 2 enrichment
+        env:
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        # Pre-bake matched-phrase verdicts for any 2.03 / 3.01 filings the
+        # app might surface. Skipped automatically for already-enriched
+        # filings, so this is fast on incremental runs.
+        run: python precompute_enrichments.py
+
       - name: Commit updated DB
         run: |
           git config user.name  "github-actions[bot]"

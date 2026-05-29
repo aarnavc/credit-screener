@@ -46,6 +46,22 @@ CREATE TABLE IF NOT EXISTS entities (
     tickers          TEXT,
     fetched_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Precomputed Layer 2 enrichment per filing/item — populated by
+-- precompute_enrichments.py during ingestion. The app reads from here
+-- so window changes don't trigger live SEC fetches. matched_phrases is
+-- a JSON-encoded list of strings (with audit annotations like [active]).
+CREATE TABLE IF NOT EXISTS enrichments (
+    accession         TEXT NOT NULL,
+    item              TEXT NOT NULL,
+    weight_override   REAL,
+    suppressed        INTEGER NOT NULL DEFAULT 0,
+    matched_phrases   TEXT,
+    adjustment_note   TEXT,
+    suppression_note  TEXT,
+    enriched_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (accession, item)
+);
 """
 
 
@@ -113,6 +129,69 @@ def update_primary_documents(
             [(pd, acc, cik) for acc, cik, pd in pairs],
         )
         return cur.rowcount
+
+
+import json as _json  # used by enrichment helpers below
+
+
+def get_enrichments(
+    accessions: list[str],
+    path: Path = DB_PATH,
+) -> dict[tuple[str, str], dict]:
+    """Bulk-load precomputed enrichments. Returns dict keyed by (accession, item)."""
+    if not accessions:
+        return {}
+    placeholders = ",".join("?" * len(accessions))
+    with connect(path) as conn:
+        rows = conn.execute(
+            f"SELECT accession, item, weight_override, suppressed, "
+            f"matched_phrases, adjustment_note, suppression_note "
+            f"FROM enrichments WHERE accession IN ({placeholders})",
+            accessions,
+        ).fetchall()
+    out: dict[tuple[str, str], dict] = {}
+    for acc, item, weight_override, suppressed, mp, an, sn in rows:
+        out[(acc, item)] = {
+            "weight_override":  weight_override,
+            "suppressed":       bool(suppressed),
+            "matched_phrases":  _json.loads(mp) if mp else [],
+            "adjustment_note":  an,
+            "suppression_note": sn,
+        }
+    return out
+
+
+def upsert_enrichment(
+    accession: str,
+    item: str,
+    weight_override: float | None,
+    suppressed: bool,
+    matched_phrases: list[str] | None,
+    adjustment_note: str | None,
+    suppression_note: str | None,
+    path: Path = DB_PATH,
+) -> None:
+    with connect(path) as conn:
+        conn.execute(
+            """
+            INSERT INTO enrichments
+                (accession, item, weight_override, suppressed,
+                 matched_phrases, adjustment_note, suppression_note, enriched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(accession, item) DO UPDATE SET
+                weight_override = excluded.weight_override,
+                suppressed = excluded.suppressed,
+                matched_phrases = excluded.matched_phrases,
+                adjustment_note = excluded.adjustment_note,
+                suppression_note = excluded.suppression_note,
+                enriched_at = excluded.enriched_at
+            """,
+            (
+                accession, item, weight_override, int(bool(suppressed)),
+                _json.dumps(matched_phrases) if matched_phrases else None,
+                adjustment_note, suppression_note,
+            ),
+        )
 
 
 def get_entity(cik: str, path: Path = DB_PATH) -> tuple[str | None, str | None] | None:

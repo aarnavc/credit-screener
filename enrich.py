@@ -31,6 +31,7 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
+from db import get_enrichments, upsert_enrichment
 from edgar import get
 from scoring import ScoredIssuer, recompute
 
@@ -396,13 +397,72 @@ def evaluate_3_01(text: str) -> tuple[bool, list[str], str | None]:
     return False, [], None
 
 
+# --- Result helpers --------------------------------------------------------
+# Live evaluators return tuples; we normalize into a dict that matches the
+# DB enrichment row shape so the apply-step works identically whether the
+# verdict came from the DB or a fresh computation.
+
+def _live_2_03_enrichment(text: str) -> dict:
+    new_w, phrases, note = evaluate_2_03(text)
+    suppressed = new_w == 0.0
+    return {
+        "weight_override":  new_w,
+        "suppressed":       bool(suppressed),
+        "matched_phrases":  phrases or [],
+        "adjustment_note":  note,
+        "suppression_note": "de-escalated by full-text" if suppressed else None,
+    }
+
+
+def _live_3_01_enrichment(text: str) -> dict:
+    suppress, phrases, note = evaluate_3_01(text)
+    return {
+        "weight_override":  0.0 if suppress else None,
+        "suppressed":       bool(suppress),
+        "matched_phrases":  phrases or [],
+        "adjustment_note":  note,
+        "suppression_note": "transaction language (Layer 2)" if suppress else None,
+    }
+
+
+def _apply_enrichment(c, e: dict) -> bool:
+    """Apply an enrichment dict to a contribution. Returns True if anything
+    score-relevant changed (weight bumped, suppressed, etc.)."""
+    if e["matched_phrases"]:
+        c.matched_phrases = list(e["matched_phrases"])
+    if e["adjustment_note"]:
+        c.adjustment_note = e["adjustment_note"]
+    changed = False
+    w_new = e["weight_override"]
+    if w_new is not None and w_new != c.weight:
+        c.weight = float(w_new)
+        if e["suppressed"]:
+            c.suppressed = True
+            c.note = e["suppression_note"] or c.note
+        changed = True
+    elif e["suppressed"] and not c.suppressed:
+        c.weight = 0.0
+        c.suppressed = True
+        c.note = e["suppression_note"] or c.note
+        changed = True
+    return changed
+
+
 # --- Issuer-level orchestration -------------------------------------------
 
 def enrich_issuer(
     issuer: ScoredIssuer,
     url_lookup: dict[str, str],
+    cached: dict[tuple[str, str], dict] | None = None,
 ) -> bool:
-    """Apply Layer 2 to one issuer (mutates in place). Returns True if anything changed."""
+    """Apply Layer 2 to one issuer (mutates in place).
+
+    `cached` is a {(accession, item): enrichment_dict} map — when an entry
+    is present we use it directly (no network, no text fetch). When missing,
+    we fall back to live evaluation. Returns True if anything score-relevant
+    changed.
+    """
+    cached = cached or {}
     by_accession: dict[str, list] = defaultdict(list)
     for c in issuer.contributions:
         if c.item in ("2.03", "3.01") and not c.suppressed:
@@ -415,37 +475,29 @@ def enrich_issuer(
     changed = False
 
     for accession, contribs in by_accession.items():
-        filing_url = url_lookup.get(accession)
-        if not filing_url:
-            continue
-        text = fetch_filing_text(accession, filing_url)
-        if not text:
-            continue
+        text: str | None = None  # lazy-loaded only if we have a cache miss
 
         for c in contribs:
-            if c.item == "2.03":
-                new_w, phrases, note = evaluate_2_03(text)
-                if phrases:
-                    c.matched_phrases = phrases
-                if note:
-                    c.adjustment_note = note
-                if new_w is not None and new_w != c.weight:
-                    c.weight = new_w
-                    if new_w == 0.0:
-                        c.suppressed = True
-                        c.note = "de-escalated by full-text"
-                    changed = True
-            elif c.item == "3.01":
-                suppress, phrases, note = evaluate_3_01(text)
-                if phrases:
-                    c.matched_phrases = phrases
-                if note:
-                    c.adjustment_note = note
-                if suppress:
-                    c.weight = 0.0
-                    c.suppressed = True
-                    c.note = "transaction language (Layer 2)"
-                    changed = True
+            key = (accession, c.item)
+            e = cached.get(key)
+            if e is None:
+                # Cache miss → live compute. Fetch the text once per filing,
+                # then reuse for any other items on that accession.
+                if text is None:
+                    filing_url = url_lookup.get(accession)
+                    if not filing_url:
+                        continue
+                    text = fetch_filing_text(accession, filing_url)
+                    if not text:
+                        continue
+                if c.item == "2.03":
+                    e = _live_2_03_enrichment(text)
+                elif c.item == "3.01":
+                    e = _live_3_01_enrichment(text)
+                else:
+                    continue
+            if _apply_enrichment(c, e):
+                changed = True
 
     if changed:
         recompute(issuer)
@@ -457,7 +509,15 @@ def enrich_results(
     results: list[ScoredIssuer],
     url_lookup: dict[str, str],
 ) -> None:
-    """Enrich a list of issuers, then re-sort by score desc (mutates in place)."""
+    """Enrich and re-sort. Bulk-loads precomputed enrichments from the DB
+    in one query, then applies them per-issuer (no per-issuer DB hits)."""
+    accessions = sorted({
+        c.accession
+        for r in results
+        for c in r.contributions
+        if c.accession and c.item in ("2.03", "3.01") and not c.suppressed
+    })
+    cached = get_enrichments(accessions) if accessions else {}
     for issuer in results:
-        enrich_issuer(issuer, url_lookup)
+        enrich_issuer(issuer, url_lookup, cached)
     results.sort(key=lambda r: r.score, reverse=True)
