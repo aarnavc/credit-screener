@@ -293,57 +293,40 @@ def render_issuer(
                 f"sum of event weights = {eq}  &nbsp;·&nbsp;  multiplier: {multi_explainer}"
             )
             st.markdown(
-                "Below: each SEC 8-K filing event that contributed, the weight it "
-                "carries, and what the underlying filing text said about it."
+                "Below: each SEC 8-K filing event that contributed, the weight "
+                "it carries, and what the underlying filing text said about it."
             )
 
-            # Fold the suppression-reason ("Why kept / suppressed") into the
-            # filing-text review cell — it was mostly empty as its own column.
-            def _review_cell(c) -> str:
-                parts = [
+            # Rendered as a structured markdown block per contribution
+            # (instead of a dataframe) so the long Filing-text review and
+            # phrase-list strings wrap onto multiple lines and stay readable.
+            for idx, c in enumerate(r.contributions):
+                weight_str = (
+                    "0 (suppressed)" if c.suppressed else f"+{c.weight:g}"
+                )
+                review_bits = [
                     s for s in (
                         humanize_adjustment_note(c.adjustment_note),
                         humanize_suppression_note(c.note),
                     ) if s
                 ]
-                return " · ".join(parts)
-
-            st.dataframe(
-                [
-                    {
-                        "Filing event":
-                            label_item(c.item),
-                        "Filed on":
-                            c.date,
-                        "Severity weight":
-                            "0 (suppressed)" if c.suppressed else f"+{c.weight:g}",
-                        "Filing-text review":
-                            _review_cell(c),
-                        "Phrases found in filing text":
-                            ", ".join(humanize_phrase(p) for p in c.matched_phrases)
-                            if c.matched_phrases else "",
-                    }
-                    for c in r.contributions
-                ],
-                hide_index=True,
-                use_container_width=True,
-                # Explicit widths so long text reads instead of getting clipped.
-                # Streamlit always allows horizontal scroll inside a dataframe;
-                # forcing these widths makes every row sized identically so
-                # the first one isn't an outlier.
-                column_config={
-                    "Filing event":
-                        st.column_config.TextColumn(width="medium"),
-                    "Filed on":
-                        st.column_config.TextColumn(width="small"),
-                    "Severity weight":
-                        st.column_config.TextColumn(width="small"),
-                    "Filing-text review":
-                        st.column_config.TextColumn(width="large"),
-                    "Phrases found in filing text":
-                        st.column_config.TextColumn(width="large"),
-                },
-            )
+                lines = [
+                    f"**{label_item(c.item)}**  ·  filed {c.date}  ·  "
+                    f"severity weight: `{weight_str}`",
+                ]
+                if review_bits:
+                    lines.append("")
+                    lines.append(
+                        "*Filing-text review:* " + " · ".join(review_bits)
+                    )
+                if c.matched_phrases:
+                    lines.append("")
+                    lines.append("*Phrases found in filing text:*")
+                    for p in c.matched_phrases:
+                        lines.append(f"- {humanize_phrase(p)}")
+                st.markdown("\n".join(lines))
+                if idx < len(r.contributions) - 1:
+                    st.markdown("---")
 
 
 # ---------- Auto-pull on open ----------------------------------------------
