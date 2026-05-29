@@ -1,0 +1,57 @@
+name: Daily SEC pull
+
+# Runs every weekday at 11:00 UTC (~6 AM ET) and pulls SEC EDGAR's daily
+# index for the prior business day. If new filings are found, commits
+# data/screener.sqlite back to the repo — Streamlit Community Cloud
+# auto-redeploys on each push so the app picks up the fresh data.
+
+on:
+  schedule:
+    # 11:00 UTC Mon–Fri. SEC publishes the daily index in the evening ET,
+    # so by early-morning the next-day's index is reliably available.
+    - cron: "0 11 * * 1-5"
+  workflow_dispatch:  # also runnable manually from the Actions tab
+
+permissions:
+  contents: write  # required to commit the updated DB back to the repo
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Pull yesterday's filings
+        env:
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: |
+          if [ -z "$SEC_USER_AGENT" ]; then
+            echo "::error::SEC_USER_AGENT secret is not set. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          YDAY=$(date -u -d 'yesterday' +%Y-%m-%d)
+          echo "Pulling $YDAY..."
+          python main.py "$YDAY"
+
+      - name: Commit updated DB
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/screener.sqlite
+          if git diff --staged --quiet; then
+            echo "No DB changes — nothing to commit."
+          else
+            git commit -m "data: daily SEC pull $(date -u +%Y-%m-%d)"
+            git push
+          fi

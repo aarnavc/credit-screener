@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Virtualenv
+.venv/
+venv/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Local OS / IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Cached SEC filing text — rebuilt on demand, large, no value in repo
+.cache/
+
+# Logs
+logs/
+*.log
+
+# SQLite runtime artifacts — paired with the main .sqlite file at runtime
+*.sqlite-wal
+*.sqlite-shm
+
+# R history (leftover from another project)
+.Rhistory
