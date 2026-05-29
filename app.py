@@ -567,3 +567,27 @@ with tab_iss:
                 "Open filing": st.column_config.LinkColumn(display_text="open"),
             },
         )
+
+
+# ---------- Watermark ------------------------------------------------------
+# Fixed bottom-right attribution. position: fixed keeps it visible even
+# when the page is scrolled. pointer-events: none so it doesn't intercept
+# clicks. z-index so it stays above Streamlit's own UI chrome.
+st.markdown(
+    """
+    <style>
+    .credit-watermark {
+        position: fixed;
+        bottom: 10px;
+        right: 18px;
+        font-size: 0.75rem;
+        color: rgba(140, 140, 140, 0.7);
+        font-style: italic;
+        z-index: 9999;
+        pointer-events: none;
+    }
+    </style>
+    <div class="credit-watermark">Aarnav Chitari</div>
+    """,
+    unsafe_allow_html=True,
+)
